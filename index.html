@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Báo Giá Sửa Chữa Nhà Tương Tác</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutral Harmony -->
+    <!-- Application Structure Plan: The application is designed as a single-page interactive dashboard. This structure was chosen over a static table for enhanced usability and clarity. It starts with a high-level summary (total cost, item count) for a quick overview. The core of the app is a card-based layout for detailed repair items, which is more responsive and intuitive than a wide table. Each card allows for interactive input of quantity and price, with real-time updates to totals. A dynamic donut chart provides an immediate visual breakdown of cost distribution. This flow (Summary -> Details -> Visual Analysis) guides the user logically through the information, making it easier to understand and evaluate the quote. -->
+    <!-- Visualization & Content Choices: 
+        - Report Info: Overall cost and item count. -> Goal: Inform. -> Viz/Method: Large-number "Stat Cards" (HTML/Tailwind). -> Interaction: Real-time updates via JS. -> Justification: Provides immediate, high-level context.
+        - Report Info: Individual repair items (location, description, solution, cost). -> Goal: Organize, Inform, Compare. -> Viz/Method: Interactive cards (HTML/Tailwind with JS-driven inputs). -> Interaction: User can input quantity/price, triggering calculations. -> Justification: A modular, responsive, and interactive way to present detailed information.
+        - Report Info: Cost breakdown by item. -> Goal: Compare, Analyze. -> Viz/Method: Dynamic Donut Chart (Chart.js/Canvas). -> Interaction: Chart updates automatically as prices are entered. -> Justification: Visually communicates cost proportions far more effectively than a list of numbers.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Be Vietnam Pro', sans-serif;
+            background-color: #f8f7f4;
+            color: #4a4a4a;
+        }
+        .main-title {
+            color: #a38560;
+        }
+        .card {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            transition: box-shadow 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+        .card:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transform: translateY(-5px);
+        }
+        .input-field {
+            border: 1px solid #d1c9c0;
+            background-color: #fdfcfb;
+            color: #6b7280;
+            transition: border-color 0.2s;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #a38560;
+            box-shadow: 0 0 0 2px rgba(163, 133, 96, 0.2);
+        }
+        .btn-print {
+            background-color: #a38560;
+            color: #ffffff;
+            transition: background-color 0.3s;
+        }
+        .btn-print:hover {
+            background-color: #8a6f4f;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 450px;
+            height: auto;
+            min-height: 400px;
+            margin: auto;
+        }
+        @media print {
+            .no-print {
+                display: none;
+            }
+            body {
+                background-color: #ffffff;
+            }
+            .card {
+                box-shadow: none;
+                border: 1px solid #ccc;
+                page-break-inside: avoid;
+            }
+            .print-grid {
+                 display: block;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <header class="text-center mb-10">
+            <h1 class="text-3xl md:text-4xl font-bold main-title">BÁO GIÁ SỬA CHỮA & CHỐNG THẤM</h1>
+            <p class="text-gray-500 mt-2">Phiên bản tương tác, cập nhật ngày: <span id="current-date"></span></p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 text-center">
+            <div class="card p-5 rounded-xl">
+                <h3 class="text-lg font-semibold text-gray-500">Tổng chi phí (VND)</h3>
+                <p id="total-cost" class="text-3xl font-bold main-title mt-2">0</p>
+            </div>
+            <div class="card p-5 rounded-xl">
+                <h3 class="text-lg font-semibold text-gray-500">Số hạng mục</h3>
+                <p id="item-count" class="text-3xl font-bold main-title mt-2">0</p>
+            </div>
+             <div class="card p-5 rounded-xl">
+                <h3 class="text-lg font-semibold text-gray-500">Trạng thái</h3>
+                <p class="text-3xl font-bold text-yellow-500 mt-2">Chờ duyệt</p>
+            </div>
+        </div>
+        
+        <div class="mb-10 p-6 card rounded-xl">
+             <h2 class="text-2xl font-bold text-center mb-6 main-title">Phân tích chi phí</h2>
+             <p class="text-center text-gray-500 mb-4">Biểu đồ dưới đây thể hiện tỷ trọng chi phí của từng hạng mục trong tổng dự toán. Điều này giúp bạn dễ dàng nhận biết hạng mục nào chiếm chi phí cao nhất.</p>
+             <div class="chart-container">
+                <canvas id="cost-chart"></canvas>
+            </div>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-bold text-center mb-6 main-title">Chi tiết các hạng mục</h2>
+            <div id="item-list" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            </div>
+        </div>
+        
+        <footer class="text-center mt-12 no-print">
+            <button onclick="window.print()" class="btn-print font-bold py-3 px-8 rounded-lg shadow-lg">
+                🖨️ In hoặc Lưu PDF
+            </button>
+        </footer>
+
+    </div>
+
+    <script>
+        const repairItemsData = [
+            {
+                id: 1,
+                location: "Phòng ngủ 1 (Cửa kính lớn)",
+                description: "Nước mưa thấm mạnh vào phòng qua khe và khuôn cửa kính. 2 viên gạch lát nền trong phòng bị phồng rộp, bập bênh do ngấm nước.",
+                solution: "Tháo dỡ phần nẹp, bơm keo chống thấm chuyên dụng cho khung cửa và tường. Đục và thay thế 2 viên gạch bị hỏng, trát lại nền.",
+                unit: "Gói",
+            },
+            {
+                id: 2,
+                location: "Phòng ngủ 2 (Cửa sổ)",
+                description: "Tường khu vực cửa sổ bị ngấm nước, ẩm mốc loang lổ. Bức tường đối diện cửa sổ có vết nứt chân chim.",
+                solution: "Xử lý chống thấm toàn bộ khuôn cửa sổ và khu vực tường xung quanh. Xử lý vết nứt tường, bả và sơn lại.",
+                unit: "Gói",
+            },
+            {
+                id: 3,
+                location: "Phòng máy giặt",
+                description: "Tường bị thấm nước từ bên ngoài vào, gây ẩm mốc. Quan sát bên ngoài thấy có vết nứt tường.",
+                solution: "Xử lý vết nứt và chống thấm cho mảng tường bên ngoài. Cạo lớp sơn cũ, xử lý chống thấm và sơn lại tường bên trong.",
+                unit: "Gói",
+            },
+            {
+                id: 4,
+                location: "Sân phơi / Ban công",
+                description: "Nền sân bị nứt gãy, nước mưa thấm xuống khu vực xung quanh và có thể ảnh hưởng tầng dưới.",
+                solution: "Đục bỏ toàn bộ lớp gạch và vữa nền cũ. Vệ sinh và thi công chống thấm 2-3 lớp bằng vật liệu chuyên dụng. Lát lại gạch mới và chà ron chống thấm.",
+                unit: "m²",
+            }
+        ];
+
+        let costChart;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderItems();
+            updateTotals();
+            createChart();
+            document.getElementById('current-date').textContent = new Date().toLocaleDateString('vi-VN');
+        });
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('vi-VN').format(value);
+        }
+
+        function renderItems() {
+            const itemList = document.getElementById('item-list');
+            itemList.innerHTML = '';
+            repairItemsData.forEach(item => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'card rounded-xl p-6 flex flex-col';
+                itemEl.innerHTML = `
+                    <h3 class="text-xl font-bold mb-3 main-title">${item.id}. ${item.location}</h3>
+                    <div class="text-gray-600 mb-4 flex-grow">
+                        <p class="font-semibold">Hiện trạng:</p>
+                        <p>${item.description}</p>
+                    </div>
+                    <div class="text-gray-700 mb-5 flex-grow">
+                        <p class="font-semibold">Giải pháp đề xuất:</p>
+                        <p>${item.solution}</p>
+                    </div>
+                    <div class="mt-auto bg-stone-50 p-4 rounded-lg">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+                            <div>
+                                <label for="quantity-${item.id}" class="block text-sm font-medium text-gray-500">Số lượng</label>
+                                <input type="number" id="quantity-${item.id}" oninput="updateCost(${item.id})" class="mt-1 input-field block w-full rounded-md shadow-sm p-2" placeholder="0" min="0">
+                            </div>
+                             <div>
+                                <label for="price-${item.id}" class="block text-sm font-medium text-gray-500">Đơn giá (${item.unit})</label>
+                                <input type="number" id="price-${item.id}" oninput="updateCost(${item.id})" class="mt-1 input-field block w-full rounded-md shadow-sm p-2" placeholder="0" min="0">
+                            </div>
+                            <div class="text-center sm:text-right">
+                                <label class="block text-sm font-medium text-gray-500">Thành tiền</label>
+                                <p id="total-${item.id}" class="text-lg font-bold text-green-600 mt-1">0</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                itemList.appendChild(itemEl);
+            });
+        }
+        
+        function updateCost(itemId) {
+            const quantity = document.getElementById(`quantity-${itemId}`).value || 0;
+            const price = document.getElementById(`price-${itemId}`).value || 0;
+            const total = quantity * price;
+            
+            document.getElementById(`total-${itemId}`).textContent = formatCurrency(total);
+            updateTotals();
+        }
+
+        function updateTotals() {
+            let totalCost = 0;
+            repairItemsData.forEach(item => {
+                const quantity = document.getElementById(`quantity-${item.id}`)?.value || 0;
+                const price = document.getElementById(`price-${item.id}`)?.value || 0;
+                totalCost += quantity * price;
+            });
+
+            document.getElementById('total-cost').textContent = formatCurrency(totalCost);
+            document.getElementById('item-count').textContent = repairItemsData.length;
+            
+            updateChart();
+        }
+
+        function createChart() {
+            const ctx = document.getElementById('cost-chart').getContext('2d');
+            const initialData = {
+                labels: repairItemsData.map(item => item.location),
+                datasets: [{
+                    data: repairItemsData.map(() => 1), 
+                    backgroundColor: [
+                        '#a38560', '#c9b7a1', '#e3d5c4', '#6b5b4a',
+                        '#8a6f4f', '#a89a8a'
+                    ],
+                    borderColor: '#f8f7f4',
+                    borderWidth: 4,
+                    hoverOffset: 8
+                }]
+            };
+
+            costChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: initialData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '60%',
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20,
+                                font: {
+                                    size: 14,
+                                    family: "'Be Vietnam Pro', sans-serif"
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed || 0;
+                                    const total = context.chart.getData().datasets[0].data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(2) : 0;
+                                    return `${label}: ${formatCurrency(value)} VND (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        function updateChart() {
+            if (!costChart) return;
+            
+            const costs = repairItemsData.map(item => {
+                const quantity = document.getElementById(`quantity-${item.id}`)?.value || 0;
+                const price = document.getElementById(`price-${item.id}`)?.value || 0;
+                return quantity * price;
+            });
+            
+            const hasData = costs.some(cost => cost > 0);
+            
+            if(hasData) {
+                costChart.data.datasets[0].data = costs;
+            } else {
+                costChart.data.datasets[0].data = repairItemsData.map(() => 1);
+            }
+
+            costChart.update();
+        }
+    </script>
+
+</body>
+</html>
